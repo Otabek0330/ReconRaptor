@@ -1,0 +1,80 @@
+# Recon Raptor — default configuration
+# ─────────────────────────────────────────────────────────────
+# Run `recon_raptor config --init` to copy this to config.yaml
+# Edit config.yaml — never edit this file directly.
+# Run `recon_raptor config --validate` to check for errors.
+# ─────────────────────────────────────────────────────────────
+
+# ── Wordlist ──────────────────────────────────────────────────
+# Path to your wordlist. Any language is accepted — the tool
+# automatically strips DNS-invalid entries and deduplicates.
+# Leave empty to skip the bruteforce phase.
+wordlist: ""
+
+# ── Performance ───────────────────────────────────────────────
+threads: 50          # concurrent threads for HTTP probe + traversal
+brute_threads: 500   # threads for DNS bruteforce (higher = faster)
+                     # puredns handles this internally; only affects dnsx fallback
+                     # 500 threads resolves ~3M FQDNs in ~5 min on a good connection
+rate: 150            # max requests per second (traversal tools)
+timeout: 10          # per-request timeout in seconds
+depth: 2             # directory traversal max recursion depth
+
+# ── HTTP ports to probe ───────────────────────────────────────
+ports:
+  - 80
+  - 443
+  - 8080
+  - 8443
+
+# ── Directory traversal file extensions ──────────────────────
+extensions:
+  - php
+  - asp
+  - aspx
+  - html
+  - htm
+  - js
+  - txt
+  - xml
+  - json
+  - bak
+  - zip
+  - env
+  - config
+  - cfg
+  - log
+  - sql
+
+# ── Paths ─────────────────────────────────────────────────────
+# resolvers.txt: list of DNS resolvers, one IP per line.
+# A bundled starter list ships with Recon Raptor.
+resolvers: ./resolvers.txt
+
+# Where to write results (created automatically).
+output_dir: ./results
+
+# ── API tokens (all optional) ─────────────────────────────────
+# ipinfo.io: free tier gives 50k requests/month.
+# Sign up at https://ipinfo.io — leave empty to use ip-api.com only.
+tokens:
+  ipinfo: ""
+
+# ── Phase toggles ─────────────────────────────────────────────
+# Set a phase to false to permanently skip it for all scans.
+# Use --skip-* flags on the command line for per-run overrides.
+phases:
+  passive_enum:   true    # subfinder, assetfinder, findomain
+  bruteforce:     true    # wordlist-based DNS resolution
+  dns_resolve:    true    # A/AAAA/CNAME/MX/NS/TXT via dnsx
+  http_probe:     true    # live host detection via httpx
+  traversal:      true    # directory bruteforce on live hosts
+  ip_enrichment:  true    # ASN / org / country / CDN detection
+
+# ── Optional extras (off by default) ─────────────────────────
+# These require additional tools — see: recon_raptor check
+extras:
+  zone_transfer:       true    # attempt AXFR against each domain's NS
+  wayback_urls:        false   # harvest historical URLs via gau
+  screenshots:         false   # capture screenshots via gowitness
+  subdomain_takeover:  false   # check CNAMEs for dangling services
