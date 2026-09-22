@@ -5,76 +5,84 @@
 # Run `recon_raptor config --validate` to check for errors.
 # ─────────────────────────────────────────────────────────────
 
-# ── Wordlist ──────────────────────────────────────────────────
-# Path to your wordlist. Any language is accepted — the tool
-# automatically strips DNS-invalid entries and deduplicates.
-# Leave empty to skip the bruteforce phase.
-wordlist: ""
+# ── Wordlists (TWO SEPARATE FILES) ────────────────────────────
+# wordlist      → subdomain labels: "api", "dev", "mail"        (-w)
+# dir_wordlist  → web paths:        "admin", "login", ".env"    (-dw)
+# Leave either empty to skip that phase. Any language is accepted —
+# DNS-invalid entries are stripped and deduplicated automatically.
+wordlist:     ""
+dir_wordlist: ""
 
 # ── Performance ───────────────────────────────────────────────
-threads: 50          # concurrent threads for HTTP probe + traversal
-brute_threads: 500   # threads for DNS bruteforce (higher = faster)
-                     # puredns handles this internally; only affects dnsx fallback
-                     # 500 threads resolves ~3M FQDNs in ~5 min on a good connection
-rate: 150            # max requests per second (traversal tools)
-timeout: 10          # per-request timeout in seconds
-depth: 2             # directory traversal max recursion depth
+threads:        50     # HTTP probe + traversal concurrency
+brute_threads:  500    # DNS bruteforce/resolution threads (dnsx path)
+rate:           150    # max requests/sec for ffuf traversal
+timeout:        10     # per-request timeout (seconds)
+depth:          2      # directory traversal recursion depth
+traversal_jobs: 3      # alive hosts scanned in parallel
 
-# ── HTTP ports to probe ───────────────────────────────────────
+# Run gobuster + dirsearch + ffuf together instead of a single primary
+# tool. Off by default — running all three ~triples the request volume
+# for near-identical results.
+traversal_all_tools: false
+
+# ── HTTP ports to probe (fallback when no port scan data) ─────
 ports:
   - 80
   - 443
   - 8080
   - 8443
 
+# ── Port scanning (naabu) ─────────────────────────────────────
+port_scan:
+  top_ports: 1000      # scan top N common ports
+  rate:      1000      # packets/sec
+  # ports: [80, 443, 8080]   # optional: exact ports instead of top_ports
+
 # ── Directory traversal file extensions ──────────────────────
+# NOTE: only the first 8 are used at scan time — each extension
+# multiplies requests per word, so keep the important ones first.
 extensions:
   - php
   - asp
   - aspx
   - html
-  - htm
   - js
-  - txt
-  - xml
   - json
   - bak
   - zip
   - env
   - config
-  - cfg
-  - log
   - sql
 
 # ── Paths ─────────────────────────────────────────────────────
-# resolvers.txt: list of DNS resolvers, one IP per line.
-# A bundled starter list ships with Recon Raptor.
-resolvers: ./resolvers.txt
+resolvers:  ./resolvers.txt   # DNS resolvers, one IP per line
+output_dir: ./results         # created automatically
 
-# Where to write results (created automatically).
-output_dir: ./results
+# Optional: override where the ipinfo MMDB is stored/looked up.
+# mmdb_path: ./ipinfo_lite.mmdb
 
 # ── API tokens (all optional) ─────────────────────────────────
-# ipinfo.io: free tier gives 50k requests/month.
-# Sign up at https://ipinfo.io — leave empty to use ip-api.com only.
 tokens:
-  ipinfo: ""
+  ipinfo: ""           # https://ipinfo.io — leave empty to use ip-api.com
 
 # ── Phase toggles ─────────────────────────────────────────────
-# Set a phase to false to permanently skip it for all scans.
-# Use --skip-* flags on the command line for per-run overrides.
+# Set a phase to false to permanently skip it. Use --skip-* flags for
+# per-run overrides.
 phases:
-  passive_enum:   true    # subfinder, assetfinder, findomain
+  passive_enum:   true    # subfinder, assetfinder, findomain, crt.sh
   bruteforce:     true    # wordlist-based DNS resolution
-  dns_resolve:    true    # A/AAAA/CNAME/MX/NS/TXT via dnsx
+  dns_resolve:    true    # A/AAAA/CNAME/MX/NS/TXT (+ _dmarc/DKIM) via dnsx
+  port_scan:      true    # naabu port scan on public IPs
   http_probe:     true    # live host detection via httpx
   traversal:      true    # directory bruteforce on live hosts
-  ip_enrichment:  true    # ASN / org / country / CDN detection
+  ip_enrichment:  true    # ASN / org / country / CDN vs cloud detection
+  harvest:        true    # robots.txt + sitemap path harvesting
+  email_security: true    # SPF / DMARC / DKIM analysis
 
-# ── Optional extras (off by default) ─────────────────────────
-# These require additional tools — see: recon_raptor check
+# ── Optional extras ───────────────────────────────────────────
 extras:
   zone_transfer:       true    # attempt AXFR against each domain's NS
-  wayback_urls:        false   # harvest historical URLs via gau
-  screenshots:         false   # capture screenshots via gowitness
-  subdomain_takeover:  false   # check CNAMEs for dangling services
+  wayback_urls:        false   # harvest historical URLs via gau (not wired yet)
+  screenshots:         false   # capture screenshots via gowitness (not wired yet)
+  subdomain_takeover:  false   # check CNAMEs for dangling services (not wired yet)

@@ -1,22 +1,31 @@
-# Recon Raptor 🦅
-
-> Multi-phase subdomain enumeration, DNS resolution, HTTP probing,  
-> directory traversal, and IP enrichment — unified in one tool.
+# Recon Raptor
 
 ```
-  ____  ___  __  ___  _  _     ____  __   ____  ____  __  ____ 
- (  _ \(  _)(  )/ __)( \/ )   (  _ \/ _\ (  _ \(_  _)/  \(  _ \
-  )   / ) _)  )(( (__  )  (    )   /    \  ) __/  )(  )  / ) __/
- (__\_)(____)(__)\___)(_/\_)  (__\_)\_/\_/(__)   (__) \__/ (__)  
+      ██████╗ ███████╗ ██████╗ ██████╗ ███╗   ██╗
+      ██╔══██╗██╔════╝██╔════╝██╔═══██╗████╗  ██║
+      ██████╔╝█████╗  ██║     ██║   ██║██╔██╗ ██║
+      ██╔══██╗██╔══╝  ██║     ██║   ██║██║╚██╗██║
+      ██║  ██║███████╗╚██████╗╚██████╔╝██║ ╚████║
+      ╚═╝  ╚═╝╚══════╝ ╚═════╝ ╚═════╝╚═╝  ╚═══╝
+
+      ██████╗  █████╗ ██████╗ ████████╗ ██████╗ ██████╗
+      ██╔══██╗██╔══██╗██╔══██╗╚══██╔══╝██╔═══██╗██╔══██╗
+      ██████╔╝███████║██████╔╝   ██║   ██║   ██║██████╔╝
+      ██╔══██╗██╔══██║██╔═══╝    ██║   ██║   ██║██╔══██╗
+      ██║  ██║██║  ██║██║        ██║   ╚██████╔╝██║  ██║
+      ╚═╝  ╚═╝╚═╝  ╚═╝╚═╝        ╚═╝    ╚═════╝ ╚═╝  ╚═╝
 ```
+
+> Multi-phase subdomain enumeration · DNS resolution · Port scanning
+> HTTP probing · Directory traversal · IP enrichment — unified in one tool.
 
 ---
 
 ## What is Recon Raptor?
 
-Recon Raptor chains together the best open-source recon tools into a single automated pipeline. You point it at one domain or a file of many — it runs everything, merges results, removes duplicates, and produces clean output files plus a Markdown summary report per domain.
+Recon Raptor chains together the best open-source recon tools into a single automated pipeline. Point it at one domain or a file of many — it runs everything, merges results, removes duplicates, and produces clean output files plus a Markdown summary report per domain.
 
-It is designed to be practical for bug bounty hunters, penetration testers, and security researchers. Every phase is independently toggleable, every tool gracefully degrades if not installed, and the OS-aware installer sets up the full toolchain in one command.
+Designed for bug bounty hunters, penetration testers, and security researchers. Every phase is independently toggleable, every tool degrades gracefully if not installed, and the installer sets up the entire toolchain — including Go itself — with one command.
 
 ---
 
@@ -24,31 +33,40 @@ It is designed to be practical for bug bounty hunters, penetration testers, and 
 
 | Phase | What it does | Tools used |
 |-------|-------------|------------|
-| Subdomain enum | Passive multi-source discovery | subfinder, assetfinder, findomain |
-| Subdomain brute | Wordlist-based DNS resolution | puredns + massdns (dnsx fallback) |
-| DNS resolution | A, AAAA, CNAME, MX, NS, TXT + zone transfer | dnsx, dig |
-| HTTP probe | Live host detection, status codes, titles, tech | httpx |
-| Dir traversal | Directory and file discovery on live hosts | gobuster, dirsearch, ffuf |
-| IP enrichment | ASN, country, org, CDN detection | ipinfo MMDB / ip-api.com |
-| Reporting | Per-domain Markdown summary | built-in |
+| Subdomain enum | Passive multi-source + crt.sh, in parallel (crt.sh always runs, even with no CLI tools) | subfinder, assetfinder, findomain, crt.sh |
+| Subdomain brute | Wordlist DNS resolution, wildcard-aware, live progress | puredns + massdns (dnsx fallback) |
+| DNS resolution | A, AAAA, CNAME, MX, NS, TXT + `_dmarc` / DKIM records + zone transfer | dnsx, dig |
+| Port scanning | Fast port scan on **public** IPs (private/loopback excluded) | naabu |
+| HTTP probe | Live host detection; per-host ports from the port scan; apex always included | httpx |
+| Dir traversal | One primary tool by default (all three optional), soft-404 aware | ffuf / gobuster / dirsearch |
+| Web path harvest | robots.txt + in-scope sitemap paths (parallel) | built-in |
+| IP enrichment | ASN, country, org, **CDN vs cloud-hosting** classification | ipinfo MMDB / ip-api.com |
+| Email security | Per-host SPF, DMARC, DKIM analysis (incl. `_dmarc` + common selectors) | built-in |
+| Reporting | Per-domain Markdown incl. CDN/cloud split + internal-IP exposure | built-in |
 
 **Key design decisions:**
 
-- **Single wordlist** — any language, any source. Invalid DNS entries are stripped automatically before use.
-- **MMDB-based IP enrichment** — downloads the ipinfo database once, queries locally. No per-IP API calls, no rate limits.
-- **Graceful degradation** — missing tools are skipped, not fatal. `recon_raptor check` shows exactly what will run.
-- **Clean + raw outputs** — every tool's raw stdout is preserved alongside the deduplicated clean results.
-- **Per-domain folders** — structured output, one directory per target.
+- **Two separate wordlists** — subdomain wordlist (`-w`) and directory traversal wordlist (`-dw`) are completely different data sets.
+- **Apex domain always included** — every phase after enumeration probes the apex domain itself, not just discovered subdomains (`subdomains.txt` stays a pure enumeration artifact; the actual target list is `resolve_targets.txt`).
+- **Go installed automatically** — the installer installs Go from go.dev, then uses `go install` as the primary method for every Go-based tool (before the package manager).
+- **Verified installs** — downloaded binaries are SHA-256 verified against the release's checksums; the Go tarball is verified against go.dev's published hash. A mismatch aborts the install; when a project publishes no checksum the install proceeds but says so explicitly.
+- **Fingerprinted checkpoint / resume** — interrupted scans resume, but a phase is only cached when it actually succeeded *and* had its required tool. Changing a flag, wordlist, or tool set re-runs the affected phase instead of silently reusing a stale result.
+- **CDN vs cloud** — Cloudflare/Fastly/Akamai/CloudFront (origin masked) are reported separately from cloud hosting (AWS/GCP/Azure/DO — origin likely reachable).
+- **Private IP filtering** — RFC 1918 / loopback addresses are excluded from scanning and enrichment, and surfaced as an internal-exposure finding (`ips_private.txt`).
+- **Single primary traversal tool by default** — running gobuster + dirsearch + ffuf together roughly triples the request volume for near-identical results; set `traversal_all_tools: true` to run all three.
+- **Thread-safe output** — parallel phases write to the console without interleaving.
 
 ---
 
 ## Requirements
 
-- **Python 3.8+**
+- **Python 3.9+** (uses standard-library generic type hints)
 - **Linux** — Debian / Ubuntu / Kali / Parrot, RHEL / Fedora / Rocky / AlmaLinux, Arch / Manjaro / BlackArch, Alpine, openSUSE
 - **macOS** — with Homebrew installed
-- **WSL** — supported, detected automatically and treated as Linux
-- `sudo` access is required only for `recon_raptor install`
+- **WSL** — detected automatically, treated as Linux
+- `sudo` access for initial tool installation (Go itself is installed automatically — no pre-existing Go required)
+
+Python dependencies: `requests`, `pyyaml`, `rich`, `maxminddb`, `defusedxml`.
 
 ---
 
@@ -56,182 +74,223 @@ It is designed to be practical for bug bounty hunters, penetration testers, and 
 
 ```bash
 # 1. Clone
-git clone https://github.com/yourorg/recon_raptor
-cd recon_raptor
+git clone https://github.com/Otabek0330/ReconRaptor
+cd ReconRaptor
 
-# 2. Install Python dependencies
+# 2. Python dependencies
 pip install -r requirements.txt
 
 # 3. Create your config
 python3 recon_raptor.py config --init
 
-# 4. Install all recon tools (requires sudo)
-sudo python3 recon_raptor.py install --all
+# 4. Get a large resolver list (the bundled one is a small starter set —
+#    see "Resolver List" below for why this matters a lot)
+curl -o resolvers.txt https://raw.githubusercontent.com/trickest/resolvers/main/resolvers.txt
 
-# 5. Verify everything is ready
+# 5. Install Go + all recon tools (one command, -E preserves your env)
+sudo -E python3 recon_raptor.py install --all
+
+# 6. Open a new terminal (picks up Go PATH), then verify
 recon_raptor check
 
-# 6. Run your first scan
-recon_raptor scan -d example.com -w /path/to/wordlist.txt
+# 7. Run your first scan
+recon_raptor scan -d example.com \
+  -w /path/to/subdomain_wordlist.txt \
+  -dw /path/to/directory_wordlist.txt
 ```
 
 ---
 
 ## Installation
 
-### Step 1 — Clone the repository
+### Step 1 — Clone
 
 ```bash
-git clone https://github.com/yourorg/recon_raptor
-cd recon_raptor
+git clone https://github.com/Otabek0330/ReconRaptor
+cd ReconRaptor
 ```
 
-### Step 2 — Install Python dependencies
+### Step 2 — Python dependencies
 
 ```bash
 pip install -r requirements.txt
 ```
 
-Dependencies: `requests`, `pyyaml`, `rich`, `maxminddb`
-
-### Step 3 — Create your configuration
+### Step 3 — Create your config
 
 ```bash
 python3 recon_raptor.py config --init
 ```
 
-This copies `config.default.yaml` to `config.yaml`. Edit `config.yaml` to set your wordlist path and any API tokens. See [Configuration](#configuration) for the full reference.
+This copies `config.default.yaml` to `config.yaml`. Edit it to set your wordlist paths and API tokens.
 
-### Step 4 — Install recon tools
+### Step 4 — Install all tools
 
 ```bash
-# Install everything including optional tools
-sudo recon_raptor install --all
+sudo -E recon_raptor install --all
+```
 
-# Install only required tools (skip screenshots, wayback, vuln scanning)
-sudo recon_raptor install --exclude gowitness,gau,nuclei
+> **Why `-E`?** It preserves your shell environment (including `GITHUB_TOKEN`) through the `sudo` call. Plain `sudo` resets the environment by default on Debian/Kali, silently stripping exported variables. `-E` is the fix. (If you run `recon_raptor install` without typing `sudo` yourself, the script re-executes itself as `sudo -E` automatically.)
+
+The installer:
+1. **Installs Go** from `https://go.dev` if not already present (1.21+ required), verifying the tarball against go.dev's published SHA-256 and swapping it into place atomically.
+2. Uses `go install` as the **primary** method for every Go-based tool — before the package manager, so you don't get an old `apt` build shadowing a fresh one.
+3. **Verifies** each binary landed in `/usr/local/bin` (recovering from `$GOPATH/bin` if needed) before reporting success.
+4. Falls back to a **SHA-256-verified** GitHub binary download (fail-closed on mismatch) when `go install` isn't applicable (e.g. `findomain`, a Rust binary).
+5. Builds `massdns` from source as a last resort, in a private temp directory.
+6. Creates a `recon_raptor` symlink in `/usr/local/bin`.
+
+```bash
+# Everything including optional tools
+sudo -E recon_raptor install --all
+
+# Skip optional tools
+sudo -E recon_raptor install --exclude gowitness,gau,nuclei
 
 # Preview every command without running anything (no sudo needed)
 recon_raptor install --dry-run
 ```
 
-The installer:
-- Detects your OS and package manager automatically
-- Downloads pre-built Go binaries from GitHub Releases — Go does **not** need to be installed
-- Creates a symlink at `/usr/local/bin/recon_raptor` so the command works from anywhere
-- Prints a clear error with instructions if run without sudo
+> **Open a new terminal after install** to pick up the Go PATH (`/usr/local/go/bin`).
 
-### Step 5 — Verify
+**Install-time environment variables:**
+
+| Variable | Effect |
+|----------|--------|
+| `GITHUB_TOKEN` | Raises the GitHub API limit for the binary fallback (60 → 5000 req/hr). |
+| `RR_INSTALL_LATEST=1` | Force `@latest` for all Go tools (otherwise any pins set in the installer are used). |
+| `RR_GO_NOSUMDB=1` | Disable Go's checksum-DB verification (only for proxied/air-gapped networks; on by default). |
+
+> **macOS note:** Homebrew refuses to run as root, so under `sudo` on macOS the brew steps are skipped in favour of `go install` / source builds. Binaries still land in `/usr/local/bin`.
+
+### Step 5 — Resolver list
+
+`resolvers.txt` ships with ~44 well-known, generally reliable public resolvers — curated for reliability, not scraped in bulk. This is intentional: `massdns`/`puredns` retry every resolver that doesn't respond, so a list with thousands of dead or rate-limited entries can be **slower** than a small list where every resolver actually works.
+
+If you need more throughput for a very large wordlist, **validate a bigger list first** rather than using it raw:
+
+```bash
+pip install dnsvalidator
+dnsvalidator -tL https://raw.githubusercontent.com/trickest/resolvers/main/resolvers.txt \
+  -threads 100 -o resolvers_validated.txt
+```
+
+Then point `resolvers:` in `config.yaml` at the validated output. A relative `resolvers:` path is resolved against the project root, so the tool works when launched from any directory via the PATH symlink.
+
+### Step 6 — Verify
 
 ```bash
 recon_raptor check
 ```
 
-This shows which tools are installed, their versions, and the status of your config, wordlist, and resolvers.
+Shows every tool's resolved path — flagging anything not in `/usr/local/bin` / `/usr/local/sbin` / `/opt/homebrew/bin` with a `⚠`. It also warns if the `httpx` on your PATH doesn't look like ProjectDiscovery's (the `python3-httpx` package can shadow it on Kali/Debian, which would make the HTTP probe return 0 live hosts).
+
+---
+
+## GitHub Token (optional, but recommended)
+
+`go install` — the primary install method — does **not** need a GitHub token; it uses Go's module proxy.
+
+A token only matters for the **binary download fallback** (e.g. `findomain`), which calls the GitHub API, capped at 60 requests/hour anonymously.
+
+**Get a free token (60 seconds, no scopes needed):** https://github.com/settings/tokens/new — leave every scope unchecked (public repo access needs none).
+
+**Use it correctly:**
+
+```bash
+# Option A — preserve your whole environment through sudo
+export GITHUB_TOKEN=ghp_your_token_here
+sudo -E python3 recon_raptor.py install --all
+
+# Option B — pass just this one variable explicitly (note: no '$' before the literal token)
+sudo GITHUB_TOKEN=ghp_your_token_here python3 recon_raptor.py install --all
+```
+
+Plain `sudo` (without `-E` and without passing the variable) strips it before the script starts.
 
 ---
 
 ## Configuration
 
-`config.yaml` is created by `recon_raptor config --init`. It is a deep merge on top of `config.default.yaml` — you only need to set the values you want to change.
+`config.yaml` is created by `recon_raptor config --init`. You only need to set values you want to change — everything else uses defaults.
 
 ```yaml
-# ── Required before scanning ──────────────────────────────────────────────
-wordlist: /path/to/your/wordlist.txt
-# Any language, any source. DNS-invalid entries are stripped automatically.
-# Leave empty to skip the bruteforce phase.
+# ── Wordlists (TWO SEPARATE FILES) ────────────────────────────
+wordlist:     ""      # subdomain labels: "api", "dev", "mail"   (-w)
+dir_wordlist: ""      # web paths:        "admin", ".env"        (-dw)
 
-# ── Performance ───────────────────────────────────────────────────────────
-threads:  50      # concurrent threads across all tools
-rate:     150     # max requests per second
-timeout:  10      # per-request timeout in seconds
-depth:    2       # directory traversal max recursion depth
+# ── Performance ───────────────────────────────────────────────
+threads:        50    # HTTP probe + traversal concurrency
+brute_threads:  500   # DNS bruteforce/resolution threads (dnsx path)
+rate:           150   # max requests/sec for ffuf traversal
+timeout:        10    # per-request timeout (seconds)
+depth:          2     # directory traversal recursion depth
+traversal_jobs: 3     # alive hosts scanned in parallel
 
-# ── HTTP ports to probe ───────────────────────────────────────────────────
+# Run gobuster + dirsearch + ffuf together (default: one primary tool)
+traversal_all_tools: false
+
+# ── HTTP ports (fallback when no port scan data) ──────────────
 ports: [80, 443, 8080, 8443]
 
-# ── File extensions for directory traversal ──────────────────────────────
-extensions: [php, asp, aspx, html, js, txt, xml, json, bak, zip, env]
+# ── Port scanning (naabu) ─────────────────────────────────────
+port_scan:
+  top_ports: 1000
+  rate:      1000
+  # ports: [80, 443, 8080]   # optional: exact ports instead of top_ports
 
-# ── Paths ─────────────────────────────────────────────────────────────────
-resolvers:  ./resolvers.txt   # DNS resolver list for puredns/massdns
-output_dir: ./results         # where domain folders are created
+# ── Directory traversal extensions (first 8 are used) ─────────
+extensions: [php, asp, aspx, html, js, json, bak, zip, env, config, sql]
 
-# ── IP enrichment ─────────────────────────────────────────────────────────
+# ── Paths ─────────────────────────────────────────────────────
+resolvers:  ./resolvers.txt
+output_dir: ./results
+# mmdb_path: ./ipinfo_lite.mmdb   # optional override
+
+# ── API tokens (all optional) ─────────────────────────────────
 tokens:
-  ipinfo: "your_token_here"   # see IPInfo MMDB Setup below
-mmdb_path: ""                 # leave empty for default location
+  ipinfo: ""
 
-# ── Phase toggles ─────────────────────────────────────────────────────────
+# ── Phase toggles ─────────────────────────────────────────────
 phases:
-  passive_enum:  true
-  bruteforce:    true
-  dns_resolve:   true
-  http_probe:    true
-  traversal:     true
-  ip_enrichment: true
+  passive_enum:   true
+  bruteforce:     true
+  dns_resolve:    true
+  port_scan:      true
+  http_probe:     true
+  traversal:      true
+  ip_enrichment:  true
+  harvest:        true    # robots.txt + sitemap harvesting
+  email_security: true    # SPF / DMARC / DKIM analysis
 
-# ── Optional extras ───────────────────────────────────────────────────────
+# ── Optional extras ───────────────────────────────────────────
 extras:
-  zone_transfer:       true   # attempt AXFR against each domain's nameservers
-  wayback_urls:        false  # harvest historical URLs via gau
-  screenshots:         false  # capture screenshots via gowitness
-  subdomain_takeover:  false  # check CNAMEs for dangling services
+  zone_transfer:       true
+  wayback_urls:        false   # not wired yet
+  screenshots:         false   # not wired yet
+  subdomain_takeover:  false   # not wired yet
 ```
 
-Validate your config at any time:
+Validate or print at any time (banner goes to stderr, so `--show` output is pipeable):
 
 ```bash
 recon_raptor config --validate
-```
-
-Print the full resolved config (defaults + your overrides):
-
-```bash
 recon_raptor config --show
+recon_raptor config --show --config /path/to/other.yaml
 ```
 
 ---
 
 ## IPInfo MMDB Setup
 
-IP enrichment works in two modes.
+Instead of one API call per IP, Recon Raptor can download the entire ipinfo database and query it locally.
 
-### Mode 1 — IPInfo MMDB (recommended)
+**Benefits:** No rate limits · millisecond lookups · works offline after download · richer data
 
-Instead of sending one API request per IP, Recon Raptor downloads the entire ipinfo database as a local MMDB file and queries it instantly for every IP. This means:
+1. Create a free account at [https://ipinfo.io](https://ipinfo.io)
+2. Add your token to `config.yaml` under `tokens.ipinfo`
 
-- **No rate limits** — look up 10,000 IPs as fast as 1
-- **No per-IP network calls** during scans
-- **Richer data** — ASN, organisation, country, city, hosting/proxy flags
-- **Offline capable** after the initial download
-
-**Setup:**
-
-1. Create a free account at [https://ipinfo.io](https://ipinfo.io) — no credit card required
-2. Copy your token from the dashboard
-3. Add it to `config.yaml`:
-
-```yaml
-tokens:
-  ipinfo: "abc123yourtoken"
-```
-
-On the first scan that reaches the enrichment phase, Recon Raptor downloads:
-
-```
-https://ipinfo.io/data/ipinfo_lite.mmdb?_src=frontend&token=<your_token>
-```
-
-The file (~100 MB) is saved next to `config.yaml` as `ipinfo_lite.mmdb` and refreshed automatically every 7 days. You can set a custom path:
-
-```yaml
-mmdb_path: /opt/recon_raptor/ipinfo_lite.mmdb
-```
-
-### Mode 2 — ip-api.com fallback
-
-If no token is configured, Recon Raptor falls back to ip-api.com. It is completely free with no API key, but rate-limited to approximately 40 requests per minute. Suitable for small IP sets.
+On first enrichment run, Recon Raptor downloads `ipinfo_lite.mmdb` (~100 MB) **atomically** (to a `.part` file, then swapped into place, so a failed download never corrupts an existing database) and refreshes it every 7 days. Without a token, `ip-api.com` is used as a free fallback (rate-limit aware, batched 100 IPs/request). Tokens are masked in all log output.
 
 ---
 
@@ -239,306 +298,157 @@ If no token is configured, Recon Raptor falls back to ip-api.com. It is complete
 
 ### `recon_raptor scan`
 
-Run the full recon pipeline against one or more targets.
-
 ```bash
-# Single domain
+# Single domain — passive enum only (no wordlists)
 recon_raptor scan -d example.com
 
-# Multiple domains from a file
-recon_raptor scan -D domains.txt
+# Full scan with both wordlists
+recon_raptor scan -d example.com -w ~/subs.txt -dw ~/dirs.txt
 
-# Bring your own wordlist for this run (overrides config)
-recon_raptor scan -d example.com -w /path/to/wordlist.txt
+# Multiple domains from file
+recon_raptor scan -D targets.txt -w subs.txt -dw dirs.txt
 
-# Write output to a specific directory
-recon_raptor scan -d example.com -o /tmp/scan_results
-
-# Use a different config file
-recon_raptor scan -d example.com --config /path/to/other_config.yaml
-```
-
-**Scan profiles:**
-
-```bash
-# Quick — passive enum + HTTP probe only, no bruteforce or traversal
+# Fast mode — passive enum + HTTP probe only
 recon_raptor scan -d example.com --quick
 
-# Full — enables extras: wayback URLs, screenshots if tools are installed
-recon_raptor scan -d example.com --full
+# Full mode — enables optional extras
+recon_raptor scan -d example.com -w subs.txt -dw dirs.txt --full
+
+# Custom output folder / config
+recon_raptor scan -d example.com -o /tmp/results --config my.yaml
+
+# Skip specific phases
+recon_raptor scan -d example.com --skip-ports
+recon_raptor scan -d example.com --skip-traversal --skip-enrich
+recon_raptor scan -d example.com --skip-passive --skip-brute   # DNS-only mode
+
+# Ignore any checkpoint and re-run everything from scratch
+recon_raptor scan -d example.com --fresh
 ```
 
-**Skip individual phases:**
+Targets are validated: schemes/paths/ports are stripped or rejected, IP literals and single-label names (`localhost`, `com`) are rejected, and internationalised domains are accepted (converted to punycode).
 
-```bash
-recon_raptor scan -d example.com --skip-passive      # skip subfinder/assetfinder/findomain
-recon_raptor scan -d example.com --skip-brute        # skip wordlist bruteforce
-recon_raptor scan -d example.com --skip-resolve      # skip DNS resolution
-recon_raptor scan -d example.com --skip-http         # skip HTTP probing
-recon_raptor scan -d example.com --skip-traversal    # skip directory traversal
-recon_raptor scan -d example.com --skip-enrich       # skip IP enrichment
-```
-
-Flags can be combined:
-
-```bash
-# Only subdomain enum + DNS, skip everything after
-recon_raptor scan -d example.com --skip-http --skip-traversal --skip-enrich
-
-# Passive enum + probe only, no brute, no traversal
-recon_raptor scan -d example.com --skip-brute --skip-traversal --skip-enrich
-```
+**Resume:** re-running the same command skips phases that completed successfully. A phase that failed, ran without its required tool, or whose inputs (flags, wordlist, tool set) changed is automatically re-run — you won't silently inherit a stale or empty result.
 
 ### `recon_raptor check`
 
-Show installed tools, their versions, and the status of your config, wordlist, and resolvers.
-
-```bash
-recon_raptor check
-```
-
-Example output:
-
-```
-  System        Kali Linux 2024.1  ·  x86_64
-  Package mgr   apt
-
-  ─── Core enumeration ──────────────────────────────────
-  ✓  subfinder       v2.6.3
-  ✓  assetfinder     v0.1.1
-  ✗  findomain       not found  [required]
-  ✓  puredns         v2.1.6
-  ✓  massdns         v0.3.0
-
-  ─── Resolution & probing ──────────────────────────────
-  ✓  dnsx            v1.1.6
-  ✓  httpx           v1.3.7
-
-  ─── Directory traversal ───────────────────────────────
-  ✓  gobuster        v3.6.0
-  ✗  dirsearch       not found  [optional]
-  ✓  ffuf            v2.1.0
-
-  ─── Config & files ────────────────────────────────────
-  ✓  config.yaml     found
-  ✓  resolvers.txt   28 entries
-  ✓  wordlist        42,803 valid entries  (17 DNS-invalid stripped)
-
-  ─── Optional extras ───────────────────────────────────
-  ✗  gowitness       not found  [optional]
-  ✗  gau             not found  [optional]
-  ✗  nuclei          not found  [optional]
-
-  8 ready  ·  5 missing
-
-  To install missing tools:
-    sudo recon_raptor install
-    sudo recon_raptor install --exclude gowitness,gau,nuclei
-    recon_raptor install --dry-run   (preview without sudo)
-```
+Shows every installed tool, its version, and its resolved path (flagging anything outside the known install dirs), plus config status, wordlist stats, and an httpx-identity warning if the wrong `httpx` is on PATH.
 
 ### `recon_raptor install`
 
-Install required and optional tools. **Requires sudo.**
-
 ```bash
-# Install all tools
-sudo recon_raptor install --all
-
-# Install only required tools, skip optional
-sudo recon_raptor install
-
-# Skip specific tools
-sudo recon_raptor install --exclude gowitness,gau,nuclei
-
-# Preview every command without running anything (no sudo needed)
-recon_raptor install --dry-run
+sudo -E recon_raptor install --all                    # everything, env preserved
+sudo -E recon_raptor install                          # required tools only
+sudo -E recon_raptor install --exclude gowitness,gau  # skip specific tools
+recon_raptor install --dry-run                        # preview, no sudo needed
 ```
-
-If you run `install` without sudo, Recon Raptor prints a clear message explaining what it needs and why, and shows you the exact `sudo` command to run. Nothing is silently attempted without root.
-
-The installer handles:
-
-- **Debian / Ubuntu / Kali / Parrot** — `apt`
-- **Fedora / RHEL / Rocky / AlmaLinux** — `dnf` / `yum`
-- **Arch / Manjaro / BlackArch** — `pacman`
-- **Alpine** — `apk`
-- **openSUSE** — `zypper`
-- **macOS** — `brew`
-- **WSL** — detected automatically, treated as its underlying Linux distro
-
-Go-based tools (subfinder, httpx, gobuster, ffuf, etc.) are installed as pre-built binaries downloaded from GitHub Releases. **Go does not need to be installed.**
 
 ### `recon_raptor config`
 
 ```bash
-# Create config.yaml from bundled defaults
-recon_raptor config --init
-
-# Print the full resolved configuration
-recon_raptor config --show
-
-# Validate config.yaml and report errors or warnings
-recon_raptor config --validate
+recon_raptor config --init        # create config.yaml from defaults
+recon_raptor config --show        # print effective config (pipeable)
+recon_raptor config --validate    # check for errors
 ```
 
 ---
 
 ## Output Structure
 
-For each domain, a folder is created under `output_dir` (default: `./results/`).
-
 ```
 results/
 └── example.com/
+    │   ── Subdomains ──────────────────────────────────────────
+    ├── subdomains.txt          clean unique subdomains (apex excluded)
+    ├── subdomains_raw.txt      raw output from all tools
+    ├── resolve_targets.txt     subdomains.txt + apex — the list every
+    │                           phase below actually uses
     │
-    │   ── Subdomains ──────────────────────────────────────
-    ├── subdomains.txt          clean unique subdomains
-    ├── subdomains_raw.txt      raw output from every tool (untouched)
+    │   ── DNS resolution ─────────────────────────────────────
+    ├── resolved.txt            target → IP pairs
+    ├── ips.txt                 unique public IPs
+    ├── ips_public.txt          public IPs sent to the port scanner
+    ├── ips_private.txt         RFC 1918 / loopback IPs ← internal exposure
+    ├── dns_records.txt         A/AAAA/CNAME/MX/NS/TXT + _dmarc/DKIM
+    ├── cnames.txt              CNAME chains ← review for takeover
     │
-    │   ── DNS resolution ─────────────────────────────────
-    ├── resolved.txt            subdomain → IP pairs (one per line)
-    ├── ips.txt                 unique IP addresses only
-    ├── dns_records.txt         full A/AAAA/CNAME/MX/NS/TXT dump
-    ├── cnames.txt              CNAME chains (review for subdomain takeover)
+    │   ── Port scanning ──────────────────────────────────────
+    ├── open_ports.txt          IP:PORT pairs
+    ├── ports.json              {IP: [port, ...]} mapping
     │
-    │   ── HTTP probing ────────────────────────────────────
-    ├── alive.txt               live hosts  URL [status] "title" [tech]
+    │   ── HTTP probing ────────────────────────────────────────
+    ├── alive.txt               URL  [status]  "title"  [tech]
     │
-    │   ── Directory traversal ─────────────────────────────
-    ├── traversal.txt           discovered paths, all tools merged + deduped
-    ├── traversal_raw.txt       raw output from every traversal tool
+    │   ── Directory traversal ────────────────────────────────
+    ├── traversal.txt           discovered paths (case-sensitive dedup)
+    ├── traversal_raw.txt       raw tool output
     │
-    │   ── IP enrichment ────────────────────────────────────
-    ├── ip_enrichment.json      full JSON record per IP (ASN, country, CDN…)
-    ├── ip_summary.txt          human-readable one-liner per IP
+    │   ── IP enrichment ───────────────────────────────────────
+    ├── ip_enrichment.json      full JSON per IP (incl. cdn / cloud)
+    ├── ip_summary.txt          one-liner per IP
     │
-    │   ── Report ─────────────────────────────────────────
+    │   ── Extras ─────────────────────────────────────────────
+    ├── extras/
+    │   ├── web_paths.txt       paths from robots.txt + sitemaps
+    │   └── email_security.txt  per-host SPF / DMARC / DKIM findings
+    │
+    ├── .rr_checkpoint.json     resume state (fingerprinted, hidden)
     └── report.md               auto-generated Markdown summary
 ```
 
-**`subdomains.txt`** — the primary output of Phase 1. Sorted, lowercase, deduplicated. Contains every subdomain found by passive tools and bruteforce.
-
-**`resolved.txt`** — maps each subdomain to its IP address(es). Format: `subdomain.example.com 1.2.3.4`
-
-**`cnames.txt`** — CNAME records. Format: `sub.example.com -> target.cdn.provider.com`. Review this file for potential subdomain takeover — a CNAME pointing to an unclaimed S3 bucket, GitHub Pages, or Heroku endpoint is a finding.
-
-**`alive.txt`** — output of httpx. Example line:
-```
-https://api.example.com  [200]  "API Gateway v2"  [nginx, PHP/8.1]
-```
-
-**`traversal.txt`** — merged paths from all traversal tools, deduplicated. Example lines:
-```
-https://example.com/admin  [Status: 200, Size: 4321]
-https://example.com/backup.zip  [Status: 200, Size: 102400]
-```
-
-**`ip_enrichment.json`** — full enrichment data per IP. Example:
-```json
-{
-  "1.2.3.4": {
-    "country": "United States",
-    "city": "San Francisco",
-    "as": "AS13335 Cloudflare, Inc.",
-    "cdn": "Cloudflare",
-    "source": "ipinfo_mmdb"
-  }
-}
-```
-
-**`report.md`** — auto-generated summary with a stats table and truncated previews of every output file. Open in any Markdown viewer.
+The report includes a CDN-vs-cloud breakdown and an "Internal IP Exposure" section whenever private addresses appear in a target's public DNS.
 
 ---
 
 ## Tool Dependency Reference
 
 | Tool | Role | Required | Install method |
-|------|------|----------|---------------|
-| subfinder | passive subdomain discovery | yes | GitHub binary |
-| assetfinder | passive subdomain discovery | yes | GitHub binary |
-| findomain | passive subdomain discovery | no | GitHub binary / brew |
-| puredns | DNS bruteforce + wildcard filtering | yes | GitHub binary |
-| massdns | DNS resolver backend for puredns | yes | apt / brew / source |
-| dnsx | multi-record DNS resolution | yes | GitHub binary |
-| httpx | HTTP probing + fingerprinting | yes | GitHub binary |
-| gobuster | directory bruteforce | yes | apt / GitHub binary |
-| dirsearch | recursive web path scanner | no | pip |
-| ffuf | web fuzzer | no | GitHub binary / brew |
-| gowitness | screenshot capture | optional | GitHub binary |
-| gau | wayback URL harvesting | optional | GitHub binary |
-| nuclei | template-based vuln scanning | optional | GitHub binary |
+|------|------|----------|----------------|
+| subfinder | passive subdomain discovery | yes | `go install` |
+| assetfinder | passive subdomain discovery | yes | `go install` |
+| findomain | passive subdomain discovery | no | GitHub binary (SHA-verified) |
+| puredns | DNS bruteforce + wildcard filtering | yes | `go install` |
+| massdns | DNS resolver backend for puredns | yes | apt / build from source |
+| dnsx | multi-record DNS resolution | yes | `go install` |
+| httpx | HTTP probing + fingerprinting | yes | `go install` |
+| naabu | fast port scanner | no | `go install` |
+| gobuster | directory bruteforce | yes | `go install` |
+| dirsearch | recursive web path scanner | no | pipx / pip / git |
+| ffuf | web fuzzer (default traversal tool) | no | `go install` |
+| gowitness | screenshot capture | optional | `go install` |
+| gau | wayback URL harvesting | optional | `go install` |
+| nuclei | template-based vuln scanning | optional | `go install` |
+| dig | zone transfer (AXFR) | optional | dnsutils / bind-tools |
 
-**Required** means the tool covers a phase that has no fallback. The scan will warn and skip the phase, but the output will be incomplete.
-
-**Optional** tools are not installed by `recon_raptor install` by default. Use `--all` to include them.
-
----
-
-## Resolvers
-
-A starter `resolvers.txt` ships with Recon Raptor containing 20+ well-known public DNS resolvers. For large-scale bruteforce, replace it with a large verified resolver list.
-
-Recommended sources:
-
-- [https://github.com/trickest/resolvers](https://github.com/trickest/resolvers) — 60k+ verified resolvers, updated daily
-- [https://github.com/janmasarik/resolvers](https://github.com/janmasarik/resolvers) — community-maintained list
-
-Place the file anywhere and update `resolvers` in `config.yaml`.
+> Go is installed automatically by `sudo -E recon_raptor install`.
 
 ---
 
-## Wordlist
+## Wordlist Recommendations
 
-Recon Raptor accepts any wordlist in any language. Before scanning, it:
+**Subdomain wordlists** (`-w`): [SecLists/Discovery/DNS](https://github.com/danielmiessler/SecLists), [commonspeak2](https://github.com/assetnote/commonspeak2-wordlists), [OneListForAll](https://github.com/six2dez/OneListForAll)
 
-1. Lowercases every entry
-2. Strips entries that do not match RFC 1123 DNS label format (`[a-z0-9][a-z0-9-]{0,61}[a-z0-9]`)
-3. Deduplicates
-4. Reports how many entries were stripped
+**Directory wordlists** (`-dw`): [SecLists/Discovery/Web-Content](https://github.com/danielmiessler/SecLists), [assetnote/wordlists](https://wordlists.assetnote.io)
 
-A minimal bundled wordlist (`wordlists/common.txt`) is included as a fallback. For real scans, use a purpose-built subdomain wordlist:
-
-- [https://github.com/danielmiessler/SecLists](https://github.com/danielmiessler/SecLists) — `Discovery/DNS/`
-- [https://github.com/assetnote/commonspeak2-wordlists](https://github.com/assetnote/commonspeak2-wordlists)
-- [https://github.com/six2dez/OneListForAll](https://github.com/six2dez/OneListForAll)
+**Resolver lists**: [dnsvalidator](https://github.com/vortexau/dnsvalidator) + [trickest/resolvers](https://github.com/trickest/resolvers) — always validate before use.
 
 ---
 
 ## Common Workflows
 
-### Bug bounty — quick passive recon
-
 ```bash
-recon_raptor scan -D in_scope_domains.txt --quick -o ./bb_results
-```
+# Bug bounty — quick passive recon
+recon_raptor scan -D in_scope.txt --quick
 
-### Full scan on a single target
+# Full scan, all phases
+recon_raptor scan -d target.com -w subs_big.txt -dw raft-medium.txt --full
 
-```bash
-recon_raptor scan -d target.com -w ~/wordlists/subdomains_big.txt --full
-```
+# Maximum traversal coverage (run all three tools)
+# → set traversal_all_tools: true in config.yaml, then:
+recon_raptor scan -d target.com -dw dirs.txt --skip-passive --skip-brute
 
-### Subdomain enum only, no traversal
-
-```bash
-recon_raptor scan -d target.com --skip-traversal --skip-enrich
-```
-
-### Directory traversal only (subdomains already known)
-
-```bash
-# Put known live hosts in a file, then skip everything up to traversal
-recon_raptor scan -d target.com --skip-passive --skip-brute \
-  --skip-resolve --skip-enrich
-# Then manually copy your known hosts into results/target.com/alive.txt
-# and re-run with only traversal enabled
-```
-
-### Multi-domain scan with custom output path
-
-```bash
-recon_raptor scan -D clients.txt -o /mnt/pentest_drive/results
+# Multi-domain with resume — re-run the same command after an interruption
+recon_raptor scan -D clients.txt -w subs.txt -dw dirs.txt
 ```
 
 ---
@@ -546,74 +456,109 @@ recon_raptor scan -D clients.txt -o /mnt/pentest_drive/results
 ## Project Structure
 
 ```
-recon_raptor/
-├── recon_raptor.py              entry point  (chmod +x, symlinked to PATH)
-├── config.default.yaml          bundled defaults — never edit this file
+ReconRaptor/
+├── recon_raptor.py              entry point (symlinked to PATH)
+├── config.default.yaml          bundled defaults — never edit directly
 ├── config.yaml                  your config — created by config --init
-├── requirements.txt
-├── resolvers.txt                bundled starter DNS resolver list
-├── ipinfo_lite.mmdb             downloaded on first enrichment run (if token set)
-│
-├── wordlists/
-│   └── common.txt               minimal bundled fallback wordlist
+├── requirements.txt             requests, pyyaml, rich, maxminddb, defusedxml
+├── resolvers.txt                bundled DNS resolver starter list
+├── wordlists/common.txt         minimal bundled fallback
 │
 └── modules/
     ├── core/
-    │   ├── config.py            config loader + validator
-    │   ├── preflight.py         tool detection + capability table
-    │   ├── installer.py         OS-aware tool installer
-    │   ├── scanner.py           scan orchestrator
-    │   └── reporter.py          Markdown report generator
+    │   ├── config.py            config loader + strict FQDN/IDN validator
+    │   ├── preflight.py         parallel tool detection + capability table
+    │   ├── installer.py         verified, OS-aware installer (Go + tools)
+    │   ├── scanner.py           orchestrator + fingerprinted checkpoints
+    │   └── reporter.py          Markdown report (CDN/cloud + exposure)
     │
     ├── phases/
-    │   ├── subdomain.py         passive enum + bruteforce
-    │   ├── resolver.py          DNS resolution + zone transfer
-    │   ├── http_probe.py        HTTP probing via httpx
-    │   ├── traversal.py         directory traversal
-    │   └── enrichment.py        IP enrichment (MMDB + ip-api.com)
+    │   ├── subdomain.py         passive + crt.sh (always) + wildcard brute
+    │   ├── resolver.py          DNS resolution + _dmarc/DKIM + zone transfer
+    │   ├── port_scanner.py      naabu (public IPs only)
+    │   ├── http_probe.py        httpx (per-host ports + apex)
+    │   ├── traversal.py         single primary tool by default, soft-404 aware
+    │   ├── enrichment.py        CDN vs cloud classification
+    │   └── extras.py            robots/sitemap harvest + per-host SPF/DMARC/DKIM
     │
     └── utils/
-        ├── wordlist.py          wordlist cleaner + validator
-        ├── output.py            file writers + subdomain extractor
-        └── network.py           HTTP helpers for enrichment APIs
+        ├── process.py           subprocess runner (path resolution, group kill)
+        ├── wordlist.py          subdomain + dir wordlist cleaners
+        ├── output.py            thread-safe printing + strict subdomain extract
+        └── network.py           HTTP helpers + atomic download + ip-api batch
 ```
+
+---
+
+## Troubleshooting
+
+**`ModuleNotFoundError: No module named 'modules...'`**
+A file is missing from your local copy — make sure the whole tree is committed. To find gaps in one pass:
+
+```bash
+python3 -c "
+import ast, pathlib
+missing = []
+for f in pathlib.Path('.').rglob('*.py'):
+    if '__pycache__' in str(f): continue
+    for node in ast.walk(ast.parse(f.read_text())):
+        if isinstance(node, ast.ImportFrom) and node.module and node.module.startswith('modules.'):
+            p = pathlib.Path(node.module.replace('.', '/') + '.py')
+            if not p.exists(): missing.append((str(f), node.module))
+print('All imports resolve.' if not missing else missing)
+"
+```
+
+**HTTP probe / `alive.txt` comes back empty**
+Check `recon_raptor check` for the httpx warning — on Kali/Debian the `python3-httpx` package can shadow ProjectDiscovery's httpx. Reinstall it: `go install github.com/projectdiscovery/httpx/cmd/httpx@latest`. (The probe now refuses to cache an empty result caused by the wrong binary, so a re-run works once httpx is fixed.)
+
+**A phase keeps returning 0 results**
+Zero-result phases are **not** cached, so simply re-running retries them. Check `subdomains_raw.txt` for tool errors and confirm network access. Use `--fresh` to force a full clean run.
+
+**`puredns` bruteforce seems slow**
+Check your resolver count (`wc -l resolvers.txt`). A tiny list against a 100k+ wordlist is genuinely slow — see [Step 5](#step-5--resolver-list). Live progress streams so a "frozen" terminal usually just means it's still working.
+
+**A tool shows installed under plain `sudo` but not when run directly**
+`/usr/local/bin` may not be in sudo's `secure_path`. Recon Raptor resolves tool paths directly at both detection and execution time, so scans work regardless — but plain `sudo <tool>` won't. Fix with `sudo visudo` → add `/usr/local/bin` to `secure_path`.
+
+---
+
+## Security Notes
+
+- `config.yaml` is excluded from git via `.gitignore` — it may contain your ipinfo token.
+- Downloaded binaries are **SHA-256 verified** (fail-closed on mismatch); the Go tarball is verified against go.dev's published hash. Unverifiable downloads are installed but clearly labelled.
+- Archives are extracted with path-traversal protection (no tar-/zip-slip), even as root.
+- Go is installed **atomically** and its checksum DB (`GOSUMDB`) stays enabled by default.
+- API tokens (ipinfo, GitHub) are masked in all log output.
+- Private / loopback IPs are excluded from scanning and enrichment, and surfaced as an internal-exposure finding.
+- All subprocess calls use `shell=False`; child process groups are killed on Ctrl+C or timeout.
 
 ---
 
 ## Contributing
 
-Contributions are welcome. Please open an issue before submitting a large pull request so we can discuss the change first.
+Contributions welcome. Open an issue before a large PR.
 
-**Areas actively looking for contributions:**
+**High-priority areas:**
+- `takeover.py` — dangling-CNAME takeover check against `cnames.txt` (data is ready).
+- Wildcard-aware filtering of **passive** results (must keep dangling-CNAME candidates).
+- Wire `gau` (wayback) and `gowitness` (screenshots) — config toggles exist, code doesn't yet.
+- DNS permutations (alterx / dnsgen) through `puredns resolve`.
+- Test coverage — parsers (httpx, robots, sitemap, SPF/DMARC, dirsearch/gobuster) are the highest-value targets.
 
-- `modules/phases/extras.py` — `gau` wayback harvesting, `gowitness` screenshots, `nuclei` scanning
-- `modules/phases/takeover.py` — CNAME dangling check against `cnames.txt`
-- More OS support in `installer.py`
-- Additional CDN/cloud ASN mappings in `enrichment.py`
-- Test coverage
-
-**Code style:**
-
-- Python 3.8+ compatible (avoid walrus operator, `match`, etc. where possible for compatibility)
-- Type hints on all public functions
-- Docstring on every module and public function
-- No new third-party dependencies without discussion
+**Code style:** Python 3.9+ · type hints on public functions · docstring on every module.
 
 ---
 
 ## Legal Disclaimer
 
-Recon Raptor is intended for **authorised security testing only**.
-
-Only run this tool against systems you own, have explicit written permission to test, or that are listed in a bug bounty programme's in-scope assets. Unauthorised scanning is illegal in most jurisdictions and violates the terms of service of virtually every platform.
-
-The authors accept no liability for misuse or any damage caused by this tool.
+Recon Raptor is intended for **authorised security testing only**. Only run it against systems you own or have explicit written permission to test. Unauthorised scanning is illegal in most jurisdictions. The authors accept no liability for misuse.
 
 ---
 
 ## License
 
-MIT License — see [LICENSE](LICENSE) for full text.
+MIT License. (Add a `LICENSE` file to the repo to make the terms explicit.)
 
 ---
 

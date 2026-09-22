@@ -1,20 +1,15 @@
 #!/usr/bin/env python3
 """
-Recon Raptor — Multi-phase reconnaissance tool
-Subdomain enumeration · DNS resolution · HTTP probing
-Directory traversal · IP enrichment · Reporting
+Recon Raptor v1.1.0 — Multi-phase reconnaissance tool
 
 Usage:
-  recon_raptor scan -d example.com
-  recon_raptor scan -D domains.txt -w wordlist.txt
-  recon_raptor scan -d example.com --quick
+  recon_raptor scan -d example.com -w subdomain_wl.txt -dw dir_wl.txt
+  recon_raptor scan -D domains.txt --quick
+  recon_raptor scan -d example.com --skip-ports --skip-traversal
   recon_raptor check
   sudo recon_raptor install --all
-  sudo recon_raptor install --exclude gowitness,nuclei
   recon_raptor install --dry-run
   recon_raptor config --init
-  recon_raptor config --show
-  recon_raptor config --validate
 """
 
 import sys
@@ -24,15 +19,17 @@ from pathlib import Path
 ROOT_DIR = Path(__file__).parent.resolve()
 sys.path.insert(0, str(ROOT_DIR))
 
-VERSION = "1.0.0"
+VERSION = "1.1.0"
 
 try:
     from rich.console import Console
-    from rich.text import Text
-    _RICH = True
-    console = Console()
+    from rich.text    import Text
+    _RICH   = True
+    # Banner goes to STDERR so `config --show` (and any piped command) emits
+    # only its real output on stdout.
+    console = Console(stderr=True)
 except ImportError:
-    _RICH = False
+    _RICH   = False
     console = None
 
 
@@ -57,107 +54,119 @@ def print_banner():
         banner.append(art, style="bold blue")
         console.print(banner)
         console.print(
-            f"  [dim]Subdomain Enum  •  DNS  •  HTTP Probe  •  Dir Traversal  •  IP Enrichment  •  v{VERSION}[/dim]\n"
-        )
+            f"  [dim]Subdomain Enum  •  DNS  •  Port Scan  •  HTTP Probe  "
+            f"•  Dir Traversal  •  IP Enrichment  •  v{VERSION}[/dim]\n")
     else:
-        print(art)
-        print(f"  Subdomain Enum · DNS · HTTP Probe · Dir Traversal · IP Enrichment  v{VERSION}\n")
+        # Non-rich fallback: still keep the banner off stdout.
+        print(art, file=sys.stderr)
+        print(f"  Subdomain Enum · DNS · Port Scan · HTTP Probe · "
+              f"Dir Traversal · IP Enrichment  v{VERSION}\n", file=sys.stderr)
 
 
 def build_parser():
     parser = argparse.ArgumentParser(
         prog='recon_raptor',
-        description='Multi-phase subdomain enumeration and directory traversal tool',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 examples:
   recon_raptor scan -d example.com
-  recon_raptor scan -D domains.txt -w /path/to/wordlist.txt
-  recon_raptor scan -d example.com --quick
-  recon_raptor scan -d example.com --full --skip-traversal
+  recon_raptor scan -d example.com -w ~/wordlists/subdomains.txt -dw ~/wordlists/dirs.txt
+  recon_raptor scan -D domains.txt --quick
+  recon_raptor scan -d example.com --skip-ports --skip-traversal
+  recon_raptor scan -d example.com --full
   sudo recon_raptor install --all
   sudo recon_raptor install --exclude gowitness,gau,nuclei
   recon_raptor install --dry-run
   recon_raptor check
   recon_raptor config --init
+  recon_raptor config --validate
         """
     )
 
     sub = parser.add_subparsers(dest='command', metavar='command')
     sub.required = True
 
-    # ── scan ─────────────────────────────────────────────────────────────────
+    # ── scan ──────────────────────────────────────────────────────────────────
     sp = sub.add_parser('scan', help='Run the full recon pipeline')
 
     target = sp.add_mutually_exclusive_group(required=True)
     target.add_argument('-d', '--domain', metavar='DOMAIN',
                         help='Single target domain (e.g. example.com)')
     target.add_argument('-D', '--domains', metavar='FILE',
-                        help='File containing target domains, one per line')
+                        help='File with one domain per line')
 
-    sp.add_argument('-w', '--wordlist', metavar='FILE',
-                    help='Wordlist for bruteforce — any language, tool auto-cleans it')
-    sp.add_argument('-o', '--output', metavar='DIR',
+    sp.add_argument('-w',  '--wordlist',     metavar='FILE',
+                    help='Subdomain bruteforce wordlist')
+    sp.add_argument('-dw', '--dir-wordlist', metavar='FILE', dest='dir_wordlist',
+                    help='Directory traversal wordlist (DIFFERENT from -w)')
+    sp.add_argument('-o',  '--output',       metavar='DIR',
                     help='Output directory (overrides config output_dir)')
     sp.add_argument('--config', metavar='FILE', default=None,
-                    help='Path to config.yaml (default: config.yaml next to this script)')
+                    help='Path to config.yaml')
+    sp.add_argument('--fresh', action='store_true',
+                    help='Ignore any existing checkpoint — re-run every phase from scratch')
 
     profiles = sp.add_mutually_exclusive_group()
     profiles.add_argument('--quick', action='store_true',
-                          help='Passive enum + HTTP probe only — no bruteforce or traversal')
-    profiles.add_argument('--full', action='store_true',
-                          help='All phases including optional extras')
+                          help='Passive enum + HTTP probe only')
+    profiles.add_argument('--full',  action='store_true',
+                          help='All phases + optional extras')
 
     sp.add_argument('--skip-passive',   dest='skip_passive',   action='store_true')
     sp.add_argument('--skip-brute',     dest='skip_brute',     action='store_true')
     sp.add_argument('--skip-resolve',   dest='skip_resolve',   action='store_true')
+    sp.add_argument('--skip-ports',     dest='skip_ports',     action='store_true',
+                    help='Skip port scanning phase')
     sp.add_argument('--skip-http',      dest='skip_http',      action='store_true')
     sp.add_argument('--skip-traversal', dest='skip_traversal', action='store_true')
     sp.add_argument('--skip-enrich',    dest='skip_enrich',    action='store_true')
 
-    # ── check ────────────────────────────────────────────────────────────────
+    # ── check ─────────────────────────────────────────────────────────────────
     cp = sub.add_parser('check', help='Show installed tools and capability status')
     cp.add_argument('--config', metavar='FILE', default=None)
 
-    # ── install ──────────────────────────────────────────────────────────────
+    # ── install ───────────────────────────────────────────────────────────────
     ip = sub.add_parser('install',
-                        help='Install required tools — requires sudo (use --dry-run without sudo)')
-    ip.add_argument('--all', dest='install_all', action='store_true',
-                    help='Install all tools including optional ones')
+                        help='Install tools (requires sudo; use --dry-run without)')
+    ip.add_argument('--all',     dest='install_all', action='store_true',
+                    help='Include optional tools (gowitness, gau, nuclei)')
     ip.add_argument('--exclude', metavar='TOOLS',
-                    help='Comma-separated list of tools to skip (e.g. gowitness,nuclei)')
+                    help='Comma-separated tools to skip')
     ip.add_argument('--dry-run', dest='dry_run', action='store_true',
-                    help='Print every install command without executing — no sudo needed')
+                    help='Print all install commands, execute nothing')
 
-    # ── config ───────────────────────────────────────────────────────────────
+    # ── config ────────────────────────────────────────────────────────────────
     cfp = sub.add_parser('config', help='Manage configuration file')
+    cfp.add_argument('--config', metavar='FILE', default=None,
+                     help='Path to config.yaml (for --show / --validate)')
     cfg_group = cfp.add_mutually_exclusive_group(required=True)
     cfg_group.add_argument('--init',     action='store_true',
-                           help='Create config.yaml from bundled defaults')
+                           help='Create config.yaml from defaults')
     cfg_group.add_argument('--show',     action='store_true',
-                           help='Print current effective configuration')
+                           help='Print effective configuration')
     cfg_group.add_argument('--validate', action='store_true',
-                           help='Validate config.yaml and report issues')
+                           help='Validate config.yaml')
 
     return parser
 
 
 def main():
-    print_banner()
     parser = build_parser()
     args   = parser.parse_args()
+
+    # Keep the banner off stdout for `config --show` so its YAML is pipeable.
+    if not (args.command == 'config' and getattr(args, 'show', False)):
+        print_banner()
 
     if args.command == 'scan':
         from modules.core.config  import load_config
         from modules.core.scanner import run_scan
-        cfg = load_config(args.config)
-        run_scan(args, cfg)
+        run_scan(args, load_config(args.config))
 
     elif args.command == 'check':
-        from modules.core.config   import load_config
+        from modules.core.config    import load_config
         from modules.core.preflight import run_check
-        cfg = load_config(args.config)
-        run_check(cfg)
+        run_check(load_config(args.config))
 
     elif args.command == 'install':
         from modules.core.installer import run_install
@@ -171,13 +180,12 @@ def main():
             try:
                 import yaml
             except ImportError:
-                print("[!] pyyaml not installed. Run: pip install pyyaml")
+                print("[!] pyyaml not installed: pip install pyyaml")
                 sys.exit(1)
-            cfg = load_config()
-            print(yaml.dump(cfg, default_flow_style=False, sort_keys=False))
+            print(yaml.dump(load_config(args.config),
+                            default_flow_style=False, sort_keys=False))
         elif args.validate:
-            cfg = load_config()
-            validate_config(cfg)
+            validate_config(load_config(args.config))
 
 
 if __name__ == '__main__':

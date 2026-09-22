@@ -1,8 +1,19 @@
-# Recon Raptor — public DNS resolvers
-# Add more resolvers for better bruteforce throughput.
-# Large lists (1000+) are available at:
-#   https://github.com/trickest/resolvers
-#   https://github.com/janmasarik/resolvers
+# Recon Raptor — curated public DNS resolvers
+# ─────────────────────────────────────────────────────────────
+# These are well-known, large, generally reliable public resolver
+# services — NOT a raw scrape. Quality over quantity matters here:
+# massdns/puredns spend time retrying every resolver that doesn't
+# respond, so a big list full of dead/rate-limited entries can be
+# SLOWER than a small list of resolvers that are all actually alive.
+#
+# If you need more throughput than this list provides for very large
+# wordlists, the right move is NOT to just grab a raw 60k-entry list —
+# validate it first with dnsvalidator so you're only using resolvers
+# that actually respond:
+#   https://github.com/vortexau/dnsvalidator
+#   pip install dnsvalidator
+#   dnsvalidator -tL https://raw.githubusercontent.com/trickest/resolvers/main/resolvers.txt -threads 100 -o resolvers_validated.txt
+# ─────────────────────────────────────────────────────────────
 
 # Cloudflare
 1.1.1.1
@@ -16,9 +27,11 @@
 9.9.9.9
 149.112.112.112
 
-# OpenDNS
+# OpenDNS (Cisco)
 208.67.222.222
 208.67.220.220
+208.67.222.220
+208.67.220.222
 
 # Verisign
 64.6.64.6
@@ -47,14 +60,43 @@
 # Hurricane Electric
 74.82.42.42
 
-# Level3
+# Level3 / Lumen
 209.244.0.3
 209.244.0.4
 
-# Neustar
+# Neustar / UltraDNS
 156.154.70.1
 156.154.71.1
+156.154.70.5
+156.154.71.5
+
+# Yandex
+77.88.8.8
+77.88.8.1
+
+# AdGuard
+94.140.14.14
+94.140.15.15
+
+# UncensoredDNS
+91.239.100.100
+89.233.43.71
+
+# SafeDNS
+195.46.39.39
+195.46.39.40
+
+# Quad101 (Twnic)
+101.101.101.101
+101.102.103.104
 
 # Norton ConnectSafe
 199.85.126.10
 199.85.127.10
+
+# Google secondary infra (different anycast nodes)
+8.8.8.4
+
+# Cloudflare secondary
+1.1.1.2
+1.0.0.2

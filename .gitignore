@@ -1,1 +1,43 @@
+# Recon Raptor — .gitignore
+# ─────────────────────────────────────────────────────────────
+
+# User config — may contain API tokens (ipinfo, etc.)
+config.yaml
+
+# Downloaded IP database — large binary, user-specific
+*.mmdb
+ipinfo_lite.mmdb
+
+# Scan results — keep out of version control
+results/
+
+# Python cache
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Virtual environments
+venv/
+.venv/
+env/
+
+# Temp files created during scans
+/tmp/rr_wl_*
+/tmp/rr_fqdns_*
+/tmp/rr_dir_wl_*
+/tmp/rr_ips_*
+/tmp/rr_merged_wl_*
+
+# IDE / OS
+.DS_Store
 .idea/
+.vscode/
+*.swp
+*.swo
+Thumbs.db
