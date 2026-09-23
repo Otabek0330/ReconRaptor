@@ -257,3 +257,135 @@ def run_check(config: dict):
         print("    recon_raptor install --dry-run   (preview without sudo)\n")
 
     return tool_status
+
+
+# ── Phase ↔ tool registry (single source of truth) ────────────────────────────
+# Used by `recon_raptor list --tools`, the scan --only flag, and --skip-* flags.
+# Each entry: key (config phase key), label, tools it uses (empty = built-in,
+# no external tool needed), the --skip-* flag name, and CLI aliases for --only.
+PHASE_DEFS = [
+    {"key": "passive_enum",   "label": "Passive subdomain enum",
+     "tools": ["subfinder", "assetfinder", "findomain"], "builtin": "crt.sh",
+     "skip": "--skip-passive",
+     "aliases": ["passive", "subfinder", "assetfinder", "findomain", "crtsh", "crt.sh"]},
+    {"key": "bruteforce",     "label": "Subdomain bruteforce",
+     "tools": ["puredns", "massdns", "dnsx"], "builtin": "",
+     "skip": "--skip-brute",
+     "aliases": ["brute", "puredns", "massdns"]},
+    {"key": "dns_resolve",    "label": "DNS resolution (+ _dmarc/DKIM, AXFR)",
+     "tools": ["dnsx", "dig"], "builtin": "",
+     "skip": "--skip-resolve",
+     "aliases": ["dns", "resolve", "resolver", "dnsx"]},
+    {"key": "port_scan",      "label": "Port scanning (public IPs)",
+     "tools": ["naabu"], "builtin": "",
+     "skip": "--skip-ports",
+     "aliases": ["ports", "port", "portscan", "naabu"]},
+    {"key": "http_probe",     "label": "HTTP probe",
+     "tools": ["httpx"], "builtin": "",
+     "skip": "--skip-http",
+     "aliases": ["http", "probe", "httpx", "alive"]},
+    {"key": "traversal",      "label": "Directory traversal",
+     "tools": ["ffuf", "gobuster", "dirsearch"], "builtin": "",
+     "skip": "--skip-traversal",
+     "aliases": ["dirs", "dir", "directory", "fuzz", "ffuf", "gobuster", "dirsearch"]},
+    {"key": "ip_enrichment",  "label": "IP enrichment (CDN vs cloud)",
+     "tools": [], "builtin": "ipinfo MMDB / ip-api.com",
+     "skip": "--skip-enrich",
+     "aliases": ["enrich", "enrichment", "ip", "geoip"]},
+    {"key": "harvest",        "label": "Web path harvest (robots/sitemap)",
+     "tools": [], "builtin": "built-in",
+     "skip": "--skip-harvest",
+     "aliases": ["harvest", "robots", "sitemap"]},
+    {"key": "email_security", "label": "Email security (SPF/DMARC/DKIM)",
+     "tools": [], "builtin": "built-in",
+     "skip": "--skip-email",
+     "aliases": ["email", "spf", "dmarc", "dkim", "mail"]},
+]
+
+# Virtual group: enumeration = passive + brute together.
+_PHASE_GROUPS = {
+    "subdomain_enum": ["passive_enum", "bruteforce"],
+    "subs":           ["passive_enum", "bruteforce"],
+    "subdomains":     ["passive_enum", "bruteforce"],
+    "enum":           ["passive_enum", "bruteforce"],
+}
+
+_PHASE_KEYS = [p["key"] for p in PHASE_DEFS]
+
+
+def _build_alias_map() -> dict:
+    amap = {}
+    for p in PHASE_DEFS:
+        amap[p["key"]] = [p["key"]]
+        for a in p["aliases"]:
+            amap[a] = [p["key"]]
+    for name, keys in _PHASE_GROUPS.items():
+        amap[name] = keys
+    return amap
+
+
+_PHASE_ALIAS = _build_alias_map()
+
+
+def resolve_phase_names(names):
+    """
+    Map a list of user-supplied phase/tool names to canonical phase keys.
+    Returns (keys_set, unknown_list). Case/space/underscore/hyphen-insensitive.
+    """
+    keys, unknown = set(), []
+    for raw in names:
+        norm = raw.strip().lower().replace("-", "_").replace(" ", "_")
+        alt  = norm.replace("_", "")
+        matched = _PHASE_ALIAS.get(norm) or _PHASE_ALIAS.get(alt)
+        if matched:
+            keys.update(matched)
+        else:
+            unknown.append(raw)
+    return keys, unknown
+
+
+def phase_names_help() -> str:
+    """One-line list of accepted --only names, for error messages."""
+    return ", ".join(_PHASE_KEYS + ["subdomain_enum"])
+
+
+def run_list_tools(config: dict = None):
+    """`recon_raptor list --tools` — show phases, their tools, and status."""
+    status = detect_tools()
+
+    print("\n  Phases run in this order. Use the names below with --only or --skip-*.\n")
+    header = f"  {'PHASE':<16} {'STATUS':<9} TOOLS / SOURCE"
+    print(header)
+    print("  " + "─" * (len(header) - 2))
+
+    for p in PHASE_DEFS:
+        tools = p["tools"]
+        if tools:
+            have = [t for t in tools if status.get(t)]
+            # A phase is runnable if it has at least one usable tool.
+            # bruteforce/traversal need any one; others need their listed tool.
+            if p["key"] in ("passive_enum", "traversal"):
+                ok = len(have) > 0
+            elif p["key"] == "bruteforce":
+                ok = (status.get("puredns") and status.get("massdns")) or status.get("dnsx")
+            else:
+                ok = all(status.get(t) for t in tools)
+            state = " ready  " if ok else "MISSING "
+            parts = []
+            for t in tools:
+                parts.append(f"{t}{'✓' if status.get(t) else '✗'}")
+            src = "  ".join(parts)
+            if p["builtin"]:
+                src += f"  (+ {p['builtin']})"
+        else:
+            state = " ready  "
+            src = f"{p['builtin']} (no external tool)"
+        print(f"  {p['key']:<16} [{state}] {src}")
+
+    print("\n  Examples:")
+    print("    recon_raptor scan -d example.com --only traversal")
+    print("    recon_raptor scan -d example.com --only passive,http_probe")
+    print("    recon_raptor scan -d example.com --skip-ports --skip-traversal")
+    print("\n  --only reuses existing result files for phases it doesn't run,")
+    print("  so run a full scan once, then re-run a single phase with --only.\n")
+    return status

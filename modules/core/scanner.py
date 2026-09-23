@@ -50,6 +50,7 @@ _dmarc/DKIM query (#6), the httpx binary-identity check (#11).
 """
 
 import os
+import re
 import sys
 import json
 import signal
@@ -61,7 +62,7 @@ from datetime import datetime
 from pathlib import Path
 
 from modules.core.config    import validate_domain
-from modules.core.preflight import detect_tools
+from modules.core.preflight import detect_tools, resolve_phase_names, phase_names_help
 from modules.core.reporter  import generate_report
 from modules.utils.process  import kill_all_children
 from modules.utils.wordlist import clean_wordlist, clean_dir_wordlist
@@ -275,10 +276,33 @@ def _apply_profile(cfg: dict, args) -> dict:
         'skip_traversal': 'traversal',
         'skip_enrich':    'ip_enrichment',
         'skip_ports':     'port_scan',
+        'skip_harvest':   'harvest',
+        'skip_email':     'email_security',
     }
     for attr, key in skip_map.items():
         if getattr(args, attr, False):
             phases[key] = False
+
+    # --only NAME[,NAME...] — run ONLY the named phase(s)/tool(s), disable the
+    # rest. Overrides skips/quick/full. Upstream phases are skipped but their
+    # existing result files (from a prior run) are reused.
+    only = getattr(args, 'only', None)
+    if only:
+        names = [n for n in re.split(r'[,\s]+', only) if n.strip()]
+        keep, unknown = resolve_phase_names(names)
+        if unknown:
+            safe_print(f"[!] Unknown --only name(s): {', '.join(unknown)}")
+            safe_print(f"    Valid names: {phase_names_help()}")
+            safe_print("    See: recon_raptor list --tools")
+            sys.exit(1)
+        for key in list(phases.keys()) + ['passive_enum', 'bruteforce',
+                                          'dns_resolve', 'port_scan', 'http_probe',
+                                          'traversal', 'ip_enrichment', 'harvest',
+                                          'email_security']:
+            phases[key] = key in keep
+        # Zone transfer only makes sense while enumerating subdomains.
+        extras['zone_transfer'] = ('passive_enum' in keep) and extras.get('zone_transfer', True)
+        cfg['_only_active'] = sorted(keep)
 
     cfg['phases'] = phases
     cfg['extras'] = extras
@@ -679,6 +703,10 @@ def _process_domain(domain: str, cfg: dict, available: dict,
 
 def run_scan(args, cfg: dict):
     cfg = _apply_profile(cfg, args)
+
+    if cfg.get('_only_active'):
+        safe_print(f"[*] --only: running just {', '.join(cfg['_only_active'])}")
+        safe_print("    (upstream phases skipped — existing result files reused where present)")
 
     if getattr(args, 'output', None):
         cfg['output_dir'] = args.output

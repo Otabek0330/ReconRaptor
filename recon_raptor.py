@@ -111,6 +111,11 @@ examples:
                           help='Passive enum + HTTP probe only')
     profiles.add_argument('--full',  action='store_true',
                           help='All phases + optional extras')
+    profiles.add_argument('--only',  metavar='NAMES', default=None,
+                          help='Run ONLY these phase(s)/tool(s), comma-separated '
+                               '(e.g. --only traversal). Upstream phases are skipped '
+                               'but their existing result files are reused. '
+                               'See `recon_raptor list --tools` for names.')
 
     sp.add_argument('--skip-passive',   dest='skip_passive',   action='store_true')
     sp.add_argument('--skip-brute',     dest='skip_brute',     action='store_true')
@@ -120,10 +125,18 @@ examples:
     sp.add_argument('--skip-http',      dest='skip_http',      action='store_true')
     sp.add_argument('--skip-traversal', dest='skip_traversal', action='store_true')
     sp.add_argument('--skip-enrich',    dest='skip_enrich',    action='store_true')
+    sp.add_argument('--skip-harvest',   dest='skip_harvest',   action='store_true')
+    sp.add_argument('--skip-email',     dest='skip_email',     action='store_true')
 
     # ── check ─────────────────────────────────────────────────────────────────
     cp = sub.add_parser('check', help='Show installed tools and capability status')
     cp.add_argument('--config', metavar='FILE', default=None)
+
+    # ── list ──────────────────────────────────────────────────────────────────
+    lp = sub.add_parser('list', help='List scan phases, their tools, and status')
+    lp.add_argument('--tools', action='store_true',
+                    help='Show tools grouped by phase (default view)')
+    lp.add_argument('--config', metavar='FILE', default=None)
 
     # ── install ───────────────────────────────────────────────────────────────
     ip = sub.add_parser('install',
@@ -167,6 +180,11 @@ def main():
         from modules.core.config    import load_config
         from modules.core.preflight import run_check
         run_check(load_config(args.config))
+
+    elif args.command == 'list':
+        from modules.core.config    import load_config
+        from modules.core.preflight import run_list_tools
+        run_list_tools(load_config(args.config))
 
     elif args.command == 'install':
         from modules.core.installer import run_install
